@@ -20,7 +20,7 @@ CEFZIP="cef.tar.bz2"
 CEFBINARIES="cef_binaries"
 
 if [ ! -f "$CEFZIP" ]; then
-    URL="https://cef-builds.spotifycdn.com/cef_binary_145.0.28%2Bg51162e8%2Bchromium-145.0.7632.160_${ARCH}_minimal.tar.bz2"
+    URL="https://cef-builds.spotifycdn.com/cef_binary_149.0.4%2Bg2f1bfd8%2Bchromium-149.0.7827.156_${ARCH}_minimal.tar.bz2"
     echo "downloading cef binaries"
     if ! command -v aria2c &> /dev/null
     then

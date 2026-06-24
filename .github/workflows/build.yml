@@ -1,0 +1,144 @@
+name: Build
+
+on:
+  workflow_dispatch:
+    inputs:
+      cef_version:
+        description: 'CEF version'
+        required: true
+        default: '149.0.4'
+      commit_hash:
+        description: 'CEF commit hash (with g prefix)'
+        required: true
+        default: 'g2f1bfd8'
+      chromium_version:
+        description: 'Chromium version'
+        required: true
+        default: '149.0.7827.156'
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [linux64, linuxarm64]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install cross-strip
+        if: matrix.arch == 'linuxarm64'
+        run: sudo apt-get update && sudo apt-get install -y binutils-aarch64-linux-gnu
+
+      - name: Run make_cefredist.sh
+        run: |
+          # Override the hardcoded URL with our inputs
+          export CEF_URL="https://cef-builds.spotifycdn.com/cef_binary_${{ inputs.cef_version }}%2B${{ inputs.commit_hash }}%2Bchromium-${{ inputs.chromium_version }}_${{ matrix.arch }}_minimal.tar.bz2"
+
+          rm -rf tmp-${{ matrix.arch }}
+          mkdir tmp-${{ matrix.arch }}
+          cd tmp-${{ matrix.arch }}
+
+          mkdir -p ../package-${{ matrix.arch }}/CEF
+
+          curl -L -o cef.tar.bz2 "$CEF_URL"
+          mkdir cef_binaries
+          tar -xjf cef.tar.bz2 -C cef_binaries
+
+          RELEASE_DIR=$(find cef_binaries -type d -name "Release" | head -1)
+          cp -a "$RELEASE_DIR"/. ../package-${{ matrix.arch }}/CEF/
+
+          RESOURCES_DIR=$(find cef_binaries -type d -name "Resources" | head -1)
+          cp -a "$RESOURCES_DIR"/. ../package-${{ matrix.arch }}/CEF/
+
+          cd ..
+          STRIP="strip"
+          [ "${{ matrix.arch }}" = "linuxarm64" ] && STRIP="aarch64-linux-gnu-strip"
+          for so in package-${{ matrix.arch }}/CEF/*.so; do
+            [ -f "$so" ] && [ ! -L "$so" ] && $STRIP -s "$so" || true
+          done
+
+      - name: Extract API hash (linux64)
+        if: matrix.arch == 'linux64'
+        run: |
+          python3 -c "
+          import ctypes
+          lib = ctypes.CDLL('package-${{ matrix.arch }}/CEF/libcef.so')
+          lib.cef_api_hash.argtypes = [ctypes.c_int, ctypes.c_int]
+          lib.cef_api_hash.restype = ctypes.c_char_p
+          h = lib.cef_api_hash(14900, 0)
+          print(f'CEF_API_HASH_PLATFORM_LINUX={h.decode()}')
+          with open('linux_hash.txt', 'w') as f: f.write(h.decode())
+          "
+
+      - name: Create NuGet package
+        run: |
+          mkdir -p pkg/pkg
+          cp -r package-${{ matrix.arch }}/CEF pkg/pkg/
+          cp build/cef.redist.${{ matrix.arch }}.props pkg/pkg/
+          cp LICENSE.txt pkg/pkg/
+
+          cat > pkg/pkg/cef.redist.${{ matrix.arch }}.nuspec << NUSPEC
+          <?xml version="1.0"?>
+          <package xmlns="http://schemas.microsoft.com/packaging/2010/07/nuspec.xsd">
+            <metadata>
+              <id>cef.redist.\$id\$</id>
+              <version>${{ inputs.cef_version }}</version>
+              <authors>The Chromium Embedded Framework Authors</authors>
+              <requireLicenseAcceptance>false</requireLicenseAcceptance>
+              <description>CEF - the Chromium Embedded Framework.</description>
+              <copyright>Copyright © 2025</copyright>
+              <tags>chrome chromium native embedded browser CEF nativepackage linux</tags>
+              <projectUrl>https://github.com/youfch/cef.redist.linux</projectUrl>
+            </metadata>
+            <files>
+              <file src="CEF/**" />
+              <file src="cef.redist.${{ matrix.arch }}.props" target="build/" />
+              <file src="LICENSE.txt" target="LICENSE.txt" />
+            </files>
+          </package>
+          NUSPEC
+
+          cd pkg/pkg
+          dotnet new classlib -n temp --no-restore -f netstandard2.0
+          mv temp/Temp.csproj .
+          rm -rf temp temp.DotSettings
+          cat > Temp.csproj << CSPROJ
+          <Project Sdk="Microsoft.NET.Sdk">
+            <PropertyGroup>
+              <TargetFramework>netstandard2.0</TargetFramework>
+              <NuspecFile>cef.redist.${{ matrix.arch }}.nuspec</NuspecFile>
+              <IncludeBuildOutput>false</IncludeBuildOutput>
+              <NoDefaultExcludes>true</NoDefaultExcludes>
+            </PropertyGroup>
+            <ItemGroup>
+              <Content Include="CEF\**\*" />
+              <Content Include="cef.redist.${{ matrix.arch }}.props" />
+              <Content Include="LICENSE.txt" />
+            </ItemGroup>
+          </Project>
+          CSPROJ
+          dotnet pack -c Release -p:NuspecProperties="id=${{ matrix.arch }};version=${{ inputs.cef_version }}" --output ../..
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cef.redist.${{ matrix.arch }}
+          path: |
+            ./*.nupkg
+            linux_hash.txt
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - run: find artifacts -name "*.nupkg" -exec ls -lh {} \;
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ inputs.cef_version }}
+          name: "CEF Redist Linux ${{ inputs.cef_version }}"
+          files: artifacts/**/*.nupkg
