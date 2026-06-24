@@ -73,52 +73,34 @@ jobs:
 
       - name: Create NuGet package
         run: |
-          mkdir -p pkg/pkg
-          cp -r package-${{ matrix.arch }}/CEF pkg/pkg/
-          cp build/cef.redist.${{ matrix.arch }}.props pkg/pkg/
-          cp LICENSE.txt pkg/pkg/
+          mkdir -p pkg/CEF
+          cp -r package-${{ matrix.arch }}/CEF/* pkg/CEF/
+          cp build/cef.redist.${{ matrix.arch }}.props pkg/
+          cp LICENSE.txt pkg/
 
-          cat > pkg/pkg/cef.redist.${{ matrix.arch }}.nuspec << NUSPEC
-          <?xml version="1.0"?>
-          <package xmlns="http://schemas.microsoft.com/packaging/2010/07/nuspec.xsd">
-            <metadata>
-              <id>cef.redist.\$id\$</id>
-              <version>${{ inputs.cef_version }}</version>
-              <authors>The Chromium Embedded Framework Authors</authors>
-              <requireLicenseAcceptance>false</requireLicenseAcceptance>
-              <description>CEF - the Chromium Embedded Framework.</description>
-              <copyright>Copyright © 2025</copyright>
-              <tags>chrome chromium native embedded browser CEF nativepackage linux</tags>
-              <projectUrl>https://github.com/youfch/cef.redist.linux</projectUrl>
-            </metadata>
-            <files>
-              <file src="CEF/**" />
-              <file src="cef.redist.${{ matrix.arch }}.props" target="build/" />
-              <file src="LICENSE.txt" target="LICENSE.txt" />
-            </files>
-          </package>
-          NUSPEC
-
-          cd pkg/pkg
-          dotnet new classlib -n temp --no-restore -f netstandard2.0
-          mv temp/Temp.csproj .
-          rm -rf temp temp.DotSettings
-          cat > Temp.csproj << CSPROJ
+          cat > pkg/cef.redist.${{ matrix.arch }}.csproj << CSPROJ
           <Project Sdk="Microsoft.NET.Sdk">
             <PropertyGroup>
               <TargetFramework>netstandard2.0</TargetFramework>
-              <NuspecFile>cef.redist.${{ matrix.arch }}.nuspec</NuspecFile>
+              <PackageId>cef.redist.${{ matrix.arch }}</PackageId>
+              <Version>${{ inputs.cef_version }}</Version>
+              <Authors>The Chromium Embedded Framework Authors</Authors>
+              <Description>CEF - the Chromium Embedded Framework.</Description>
+              <Copyright>Copyright © 2025</Copyright>
               <IncludeBuildOutput>false</IncludeBuildOutput>
               <NoDefaultExcludes>true</NoDefaultExcludes>
+              <NoWarn>NU5100;NU5104;NU5118</NoWarn>
             </PropertyGroup>
             <ItemGroup>
-              <Content Include="CEF\**\*" />
-              <Content Include="cef.redist.${{ matrix.arch }}.props" />
-              <Content Include="LICENSE.txt" />
+              <None Include="cef.redist.${{ matrix.arch }}.props" Pack="true" PackagePath="build/" />
+              <None Include="LICENSE.txt" Pack="true" PackagePath="" />
+              <Content Include="CEF\**\*" Pack="true" PackagePath="CEF\%(RecursiveDir)%(Filename)%(Extension)" />
             </ItemGroup>
           </Project>
           CSPROJ
-          dotnet pack -c Release -p:NuspecProperties="id=${{ matrix.arch }};version=${{ inputs.cef_version }}" --output ../..
+
+          cd pkg
+          dotnet pack -c Release --output ..
 
       - uses: actions/upload-artifact@v4
         with:
