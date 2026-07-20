@@ -6,15 +6,15 @@ on:
       cef_version:
         description: 'CEF version'
         required: true
-        default: '149.0.4'
+        default: '150.0.11'
       commit_hash:
         description: 'CEF commit hash (with g prefix)'
         required: true
-        default: 'g2f1bfd8'
+        default: 'gb887805'
       chromium_version:
         description: 'Chromium version'
         required: true
-        default: '149.0.7827.156'
+        default: '150.0.7871.115'
 
 jobs:
   build:
@@ -66,7 +66,7 @@ jobs:
           lib = ctypes.CDLL('package-${{ matrix.arch }}/CEF/libcef.so')
           lib.cef_api_hash.argtypes = [ctypes.c_int, ctypes.c_int]
           lib.cef_api_hash.restype = ctypes.c_char_p
-          h = lib.cef_api_hash(14900, 0)
+          h = lib.cef_api_hash(15000, 0)
           print(f'CEF_API_HASH_PLATFORM_LINUX={h.decode()}')
           with open('linux_hash.txt', 'w') as f: f.write(h.decode())
           "
